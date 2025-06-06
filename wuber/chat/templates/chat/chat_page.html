@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Interface</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        #chatSelect, #messageInput {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        #chatWindow {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+            background-color: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 8px;
+        }
+        .me {
+            font-weight: bold;
+            color: blue;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Чат</h2>
+
+<select id="chatSelect">
+    <option disabled selected>Выберите чат</option>
+</select>
+
+<div id="chatWindow"></div>
+
+<input type="text" id="messageInput" placeholder="Напишите сообщение и нажмите Enter">
+
+<script>
+    const accessToken = localStorage.getItem('access') || prompt("Вставь свой JWT access token:");
+    localStorage.setItem('access', accessToken);
+
+    const userId = parseInt(localStorage.getItem('userId')) || parseInt(prompt("ID пользователя (ваш):"));
+    localStorage.setItem('userId', userId);
+
+    const chatSelect = document.getElementById('chatSelect');
+    const chatWindow = document.getElementById('chatWindow');
+    const messageInput = document.getElementById('messageInput');
+
+    let selectedChatId = null;
+
+    // Загрузить список чатов
+    async function loadChats() {
+        const res = await fetch('/api/chats/', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const chats = await res.json();
+        chatSelect.innerHTML = '<option disabled selected>Выберите чат</option>';
+        chats.forEach(chat => {
+            const opt = document.createElement('option');
+            opt.value = chat.id;
+            opt.textContent = `Чат #${chat.id} (${chat.chat_type})`;
+            chatSelect.appendChild(opt);
+        });
+    }
+
+    // Загрузить сообщения из выбранного чата
+    async function loadMessages(chatId) {
+        const res = await fetch(`/api/chats/${chatId}/`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const data = await res.json();
+        chatWindow.innerHTML = '';
+        data.messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<span class="${msg.sender.id === userId ? 'me' : ''}">${msg.sender.username}:</span> ${msg.content}`;
+            chatWindow.appendChild(div);
+        });
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    // Отправить сообщение
+    async function sendMessage() {
+        const content = messageInput.value.trim();
+        if (!content || !selectedChatId) return;
+
+        await fetch(`/api/chats/${selectedChatId}/messages/`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content })
+        });
+
+        messageInput.value = '';
+        await loadMessages(selectedChatId);
+    }
+
+    // События
+    chatSelect.addEventListener('change', async () => {
+        selectedChatId = chatSelect.value;
+        await loadMessages(selectedChatId);
+    });
+
+    messageInput.addEventListener('keypress', async e => {
+        if (e.key === 'Enter') {
+            await sendMessage();
+        }
+    });
+
+    // Автозагрузка чатов
+    loadChats();
+</script>
+
+</body>
+</html>
