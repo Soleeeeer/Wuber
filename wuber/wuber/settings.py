@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,10 +38,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework.authtoken',
     'chat',
     'rest_framework',
-    'rest_framework_simplejwt',
     'drf_yasg',
+    'djoser',
+    'corsheaders'
 ]
 
 MIDDLEWARE = [
@@ -51,7 +54,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
+
+CSRF_COOKIE_HTTPONLY = False
+SESSION_COOKIE_HTTPONLY = True
+
+
 
 ROOT_URLCONF = 'wuber.urls'
 
@@ -72,6 +81,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'wuber.wsgi.application'
+
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 
 
@@ -132,18 +144,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
 }
 
 SWAGGER_SETTINGS = {
-    'SECURITY_DEFINITIONS': {
-        'Bearer': {
-            'type': 'apiKey',
-            'name': 'Authorization',
-            'in': 'header',
-            'description': 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer <token>"',
-        }
-    },
-    'USE_SESSION_AUTH': False,
+    'USE_SESSION_AUTH': True,
+    'SECURITY_DEFINITIONS': {},
 }
+
+

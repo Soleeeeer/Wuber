@@ -1,11 +1,11 @@
+Django>=4.2
+djangorestframework>=3.14
+djangorestframework-simplejwt>=5.3.0
+drf-yasg>=1.21.7
+djoser>=2.2.0
+PyJWT>=2.8.0
 
-django==5.1.4
 
-
-djangorestframework==3.15.1
-
-
-djangorestframework-simplejwt==5.3.1
 
 
 
