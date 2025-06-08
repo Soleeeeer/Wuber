@@ -4,148 +4,357 @@
     <meta charset="UTF-8">
     <title>Чат</title>
     <style>
-        body { font-family: Arial; background: #e3f5dc; padding: 20px; }
-        input, button, select { margin: 5px; padding: 5px; }
-        ul { list-style-type: none; padding: 0; }
-        li { padding: 8px; border: 1px solid green; margin: 5px 0; cursor: pointer; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f2f4f7;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        input, select, button {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #22c55e;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #16a34a;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            background: #e5f7eb;
+            border: 1px solid #b2e0c0;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .message-actions {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            display: flex;
+            gap: 6px;
+        }
+        .message-actions button {
+            background-color: transparent;
+            border: none;
+            color: #555;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .message-actions button:hover {
+            color: #000;
+        }
     </style>
 </head>
 <body>
+<div class="container">
+    <div class="section">
+        <h2>Создать чат</h2>
+        <select id="chat-type">
+            <option value="private">Приватный</option>
+            <option value="group">Групповой</option>
+        </select>
+        <input type="text" id="chat-name" placeholder="Название чата (для группы)">
+        <input type="text" id="participant-ids" placeholder="ID участников через запятую">
+        <button onclick="createChat()">Создать чат</button>
+    </div>
 
-    <h2>Создать чат</h2>
-    <select id="chat-type">
-        <option value="private">Приватный</option>
-        <option value="group">Групповой</option>
-    </select>
-    <input type="text" id="chat-name" placeholder="Название (для группы)">
-    <input type="text" id="participant-ids" placeholder="ID участников через запятую">
-    <button onclick="createChat()">Создать</button>
+    <div class="section">
+        <h2>Список чатов</h2>
+        <ul id="chat-list"></ul>
+    </div>
 
-    <hr>
+    <div class="section">
+        <h2>Сообщения</h2>
+        <ul id="message-list"></ul>
+        <input type="text" id="message-input" placeholder="Введите сообщение...">
+        <button onclick="sendMessage()">Отправить</button>
+    </div>
+</div>
 
-    <h2>Чаты</h2>
-    <ul id="chat-list"></ul>
+<script>
+    let currentChatId = null;
 
-    <h2>Сообщения</h2>
-    <ul id="message-list"></ul>
-    <input type="text" id="message-input" placeholder="Ваше сообщение">
-    <button id="send-message">Отправить</button>
-
-    <script>
-        let currentChatId = null;
-
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
                 }
             }
-            return cookieValue;
         }
+        return cookieValue;
+    }
 
-        async function createChat() {
-            const chatType = document.getElementById('chat-type').value.toLowerCase();
-            const name = document.getElementById('chat-name').value;
-            const rawIds = document.getElementById('participant-ids').value;
-            const participant_ids = rawIds.split(',').map(id => parseInt(id.trim())).filter(Boolean);
+    async function createChat() {
+        const chatType = document.getElementById('chat-type').value;
+        const name = document.getElementById('chat-name').value;
+        const idsRaw = document.getElementById('participant-ids').value;
+        const participant_ids = idsRaw.split(',').map(id => parseInt(id.trim())).filter(Boolean);
 
-            const data = { chat_type: chatType, participant_ids };
-            if (chatType === 'group') data.name = name;
+        const data = { chat_type: chatType, participant_ids };
+        if (chatType === 'group') data.name = name;
 
-            const response = await fetch('/api/chats/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken'),
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify(data)
-            });
+        const response = await fetch('/api/chats/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(data)
+        });
 
-            if (response.ok) {
-                await loadChats();
-                alert("Чат создан");
-            } else {
-                const err = await response.json();
-                alert("Ошибка создания чата: " + JSON.stringify(err));
-            }
+        if (response.ok) {
+            await loadChats();
+            alert("Чат успешно создан");
+        } else {
+            alert("Ошибка при создании");
         }
+    }
 
-        async function loadChats() {
-            const response = await fetch('/api/chats/', {
-                credentials: 'same-origin',
-            });
+    async function loadChats() {
+        const res = await fetch('/api/chats/', { credentials: 'same-origin' });
+        const data = await res.json();
+        const list = document.getElementById('chat-list');
+        list.innerHTML = '';
+        data.forEach(chat => {
+            const li = document.createElement('li');
+            li.textContent = chat.name || `Чат #${chat.id}`;
+            li.onclick = () => loadMessages(chat.id);
+            list.appendChild(li);
+        });
+    }
 
-            if (response.ok) {
-                const chats = await response.json();
-                const chatList = document.getElementById('chat-list');
-                chatList.innerHTML = '';
-                chats.forEach(chat => {
-                    const li = document.createElement('li');
-                    li.textContent = chat.name || `Чат №${chat.id}`;
-                    li.onclick = () => loadMessages(chat.id);
-                    chatList.appendChild(li);
+   async function loadChats() {
+    const res = await fetch('/api/chats/', { credentials: 'same-origin' });
+    const data = await res.json();
+    const list = document.getElementById('chat-list');
+    list.innerHTML = '';
+    data.forEach(chat => {
+        const li = document.createElement('li');
+
+        // Название чата
+        const chatName = document.createElement('span');
+        chatName.textContent = chat.name || `Чат #${chat.id}`;
+        chatName.style.cursor = 'pointer';
+        chatName.onclick = () => loadMessages(chat.id);
+        li.appendChild(chatName);
+
+        // Контейнер для кнопок действий
+        const actions = document.createElement('div');
+        actions.style.display = 'inline-block';
+        actions.style.marginLeft = '10px';
+
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Редактировать';
+        editBtn.onclick = () => editChat(chat);
+        actions.appendChild(editBtn);
+
+        // Кнопка Удалить чат
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (confirm(`Удалить чат "${chat.name || chat.id}"?`)) {
+                const res = await fetch(`/api/chats/${chat.id}/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    credentials: 'same-origin'
                 });
-            } else {
-                alert('Ошибка при загрузке чатов');
+                if (res.ok) {
+                    alert('Чат удалён');
+                    await loadChats();
+                    if (currentChatId === chat.id) {
+                        currentChatId = null;
+                        document.getElementById('message-list').innerHTML = '';
+                    }
+                } else {
+                    alert('Ошибка при удалении чата');
+                }
             }
+        };
+            actions.appendChild(deleteBtn);
+
+            li.appendChild(actions);
+            list.appendChild(li);
+        });
+    }
+
+    async function loadMessages(chatId) {
+    currentChatId = chatId;
+    const res = await fetch(`/api/messages/?chat=${chatId}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+        alert("Ошибка загрузки сообщений");
+        return;
+    }
+    const messages = await res.json();
+    const list = document.getElementById('message-list');
+    list.innerHTML = '';
+
+    messages.forEach(msg => {
+        const li = document.createElement('li');
+        li.textContent = msg.content;
+
+        // Кнопки редактирования, удаления и пересылки
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.textContent = '✎';
+        editBtn.onclick = () => editMessage(msg.id, msg.content);
+        actions.appendChild(editBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑';
+        deleteBtn.onclick = () => deleteMessage(msg.id);
+        actions.appendChild(deleteBtn);
+
+        const forwardBtn = document.createElement('button');
+        forwardBtn.textContent = '➔';
+        forwardBtn.onclick = () => forwardMessage(msg.id);
+        actions.appendChild(forwardBtn);
+
+        li.appendChild(actions);
+
+        list.appendChild(li);
+    });
+}
+
+
+
+    async function sendMessage() {
+        const content = document.getElementById('message-input').value;
+        if (!content.trim() || !currentChatId) return;
+
+        const res = await fetch('/api/messages/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ chat: currentChatId, content })
+        });
+
+        if (res.ok) {
+            document.getElementById('message-input').value = '';
+            await loadMessages(currentChatId);
+        } else {
+            alert('Ошибка при отправке');
         }
+    }
 
-        async function loadMessages(chatId) {
-            currentChatId = chatId;
-            const response = await fetch(`/api/messages/?chat=${chatId}`, {
-                credentials: 'same-origin',
-            });
+    async function deleteMessage(id) {
+        if (!confirm("Удалить сообщение?")) return;
 
-            if (response.ok) {
-                const messages = await response.json();
-                const messageList = document.getElementById('message-list');
-                messageList.innerHTML = '';
-                messages.forEach(msg => {
-                    const li = document.createElement('li');
-                    li.textContent = `${msg.sender}: ${msg.content}`;
-                    messageList.appendChild(li);
-                });
-            } else {
-                alert('Ошибка при загрузке сообщений');
-            }
+        await fetch(`/api/messages/${id}/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            credentials: 'same-origin',
+        });
+        await loadMessages(currentChatId);
+    }
+
+    async function editMessage(id, oldContent) {
+        const newContent = prompt("Редактировать сообщение:", oldContent);
+        if (!newContent || newContent === oldContent) return;
+
+        await fetch(`/api/messages/${id}/`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ content: newContent })
+        });
+
+        await loadMessages(currentChatId);
+    }
+
+    async function forwardMessage(id) {
+        const chatId = prompt("В какой чат переслать сообщение? Введите ID чата:");
+        if (!chatId) return;
+
+        await fetch(`/api/messages/${id}/forward/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ chat: parseInt(chatId) })
+        });
+
+        alert("Сообщение переслано");
+    }
+
+    function editChat(chat) {
+    const newName = prompt("Введите новое название чата:", chat.name || '');
+    if (newName === null) return; // отмена
+    if (!newName.trim()) {
+        alert("Название не может быть пустым");
+        return;
+    }
+
+    fetch(`/api/chats/${chat.id}/`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name: newName })
+    })
+    .then(res => {
+        if (res.ok) {
+            alert('Чат обновлён');
+            loadChats();
+        } else {
+            alert('Ошибка при обновлении чата');
         }
+    });
+}
 
-        async function sendMessage() {
-            const content = document.getElementById('message-input').value;
-            if (!content.trim() || !currentChatId) return;
 
-            const response = await fetch('/api/messages/', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken'),
-                },
-                body: JSON.stringify({
-                    chat: currentChatId,
-                    content
-                })
-            });
-
-            if (response.ok) {
-                document.getElementById('message-input').value = '';
-                await loadMessages(currentChatId);
-            } else {
-                const err = await response.json();
-                alert('Ошибка при отправке: ' + JSON.stringify(err));
-            }
-        }
-
-        document.getElementById('send-message').onclick = sendMessage;
-        window.onload = loadChats;
-    </script>
+    // Загружаем чаты при загрузке страницы
+    window.onload = loadChats;
+</script>
 </body>
 </html>
+
+
 

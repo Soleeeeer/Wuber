@@ -1,44 +1,47 @@
 from rest_framework import serializers
-from .models import Chat, Message
+from .models import Chat, Message, ChatMembership
 from django.contrib.auth.models import User
+from rest_framework.serializers import ModelSerializer, Serializer, CharField
 
-class RegisterSerializer(serializers.ModelSerializer):
+
+class LoginSerializer(Serializer):
+    username = CharField(required=True)
+    password = CharField(required=True, write_only=True)
+
+
+class UserSerializer(ModelSerializer):
     class Meta:
         model = User
-        fields = ['username', 'password']
+        fields = ['id', 'username', 'password']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
-
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username']
-
-class MessageSerializer(serializers.ModelSerializer):
-    sender = UserSerializer(read_only=True)
-    content = serializers.CharField(source='text')
-
-    class Meta:
-        model = Message
-        fields = ['id', 'chat', 'sender', 'content', 'timestamp']
+        user = User.objects.create_user(**validated_data)
+        return user
 
 class ChatSerializer(serializers.ModelSerializer):
-    participants = UserSerializer(many=True, read_only=True)  # для чтения участников
-    participant_ids = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        many=True,
-        write_only=True,
-        source='participants'  # связать с полем модели
-    )
-    messages = MessageSerializer(many=True, read_only=True)
-    is_group = serializers.SerializerMethodField()
+    participants = UserSerializer(many=True, read_only=True)
 
     class Meta:
         model = Chat
-        fields = ['id', 'chat_type', 'name', 'is_group', 'participants', 'participant_ids', 'messages']
+        fields = ['id', 'chat_type', 'name', 'participants']
 
-    def get_is_group(self, obj):
-        return obj.chat_type == Chat.GROUP
+class MessageSerializer(serializers.ModelSerializer):
+    sender = UserSerializer(read_only=True)
+    forwarded_from = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = Message
+        fields = ['id', 'chat', 'sender', 'content', 'created_at', 'updated_at', 'forwarded_from']
+
+class MessageCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = ['chat', 'content', 'forwarded_from']
+
+class ChatMembershipSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    class Meta:
+        model = ChatMembership
+        fields = ['user', 'chat', 'role']
+

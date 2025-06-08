@@ -1,41 +1,53 @@
-from django.contrib.auth import authenticate, login
-from django.shortcuts import render
-from django.core.exceptions import PermissionDenied
-from django.contrib.auth.models import User
-from django.db.models import Count
-from rest_framework import viewsets, permissions, generics, status
-from rest_framework.permissions import AllowAny
+from rest_framework import viewsets, permissions, status, generics
 from rest_framework.response import Response
+from .models import Chat, Message, ChatMembership
+from .serializers import (
+    ChatSerializer, MessageSerializer,
+    MessageCreateSerializer, ChatMembershipSerializer, LoginSerializer
+)
+from django.contrib.auth.models import User
+from rest_framework.decorators import action
+from django.shortcuts import get_object_or_404, render
+from django.contrib.auth.decorators import login_required
+from rest_framework.permissions import AllowAny
+from .serializers import UserSerializer
 from rest_framework.views import APIView
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
-
-from .models import Chat, Message
-from .serializers import ChatSerializer, MessageSerializer, RegisterSerializer
+from django.contrib.auth import authenticate, login
+from .models import Chat
+from rest_framework.exceptions import PermissionDenied
 
 
+
+
+@login_required
 def chat_page(request):
     return render(request, 'chat/chat_page.html')
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class SessionLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
-            return Response({'success': 'Logged in'})
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = authenticate(
+            request,
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password']
+        )
+
+        if user is not None:
+            login(request, user)  # создаём сессию
+            return Response({'detail': 'Login successful'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
-    serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    serializer_class = UserSerializer
 
 
 class ChatViewSet(viewsets.ModelViewSet):
@@ -43,76 +55,116 @@ class ChatViewSet(viewsets.ModelViewSet):
     serializer_class = ChatSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def create(self, request, *args, **kwargs):
-        data = request.data
-        chat_type = data.get('chat_type')
-        participants_ids = data.get('participant_ids') or data.get('participants')
-        name = data.get('name')
+    def perform_create(self, serializer):
+        chat = serializer.save()
+        ChatMembership.objects.create(chat=chat, user=self.request.user, role='admin')
 
-        if not isinstance(participants_ids, list):
-            return Response({"error": "Поле 'participants' или 'participant_ids' должно быть списком"}, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['post'])
+    def add_participant(self, request, pk=None):
+        chat = self.get_object()
+        user = get_object_or_404(User, id=request.data['user_id'])
 
-        if chat_type == Chat.PRIVATE:
-            if len(participants_ids) != 1:
-                return Response({"error": "Для приватного чата должен быть указан ровно один другой участник"}, status=status.HTTP_400_BAD_REQUEST)
+        # Только админ может добавлять
+        membership = ChatMembership.objects.filter(chat=chat, user=request.user).first()
+        if not membership or membership.role != 'admin':
+            return Response({'error': 'Only admin can add participants'}, status=403)
 
-            other_user = User.objects.filter(id=participants_ids[0]).first()
-            if not other_user:
-                return Response({"error": "Пользователь не найден"}, status=status.HTTP_400_BAD_REQUEST)
+        ChatMembership.objects.create(chat=chat, user=user)
+        return Response({'status': f'User {user.username} added to chat {chat.id}'})
 
-            existing_chats = Chat.objects.filter(
-                chat_type=Chat.PRIVATE,
-                participants=request.user
-            ).filter(
-                participants=other_user
-            ).annotate(
-                num_participants=Count('participants')
-            ).filter(num_participants=2)
+    @action(detail=True, methods=['post'])
+    def promote(self, request, pk=None):
+        """Поменять роль участника"""
+        chat = self.get_object()
+        user = get_object_or_404(User, id=request.data['user_id'])
+        role = request.data.get('role')
 
-            if existing_chats.exists():
-                serializer = self.get_serializer(existing_chats.first())
-                return Response(serializer.data)
+        if role not in ['admin', 'member']:
+            return Response({'error': 'Invalid role'}, status=400)
 
-            chat = Chat.objects.create(chat_type=Chat.PRIVATE)
-            chat.participants.add(request.user, other_user)
-            chat.save()
-            serializer = self.get_serializer(chat)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        membership = ChatMembership.objects.filter(chat=chat, user=request.user).first()
+        if not membership or membership.role != 'admin':
+            return Response({'error': 'Only admin can change roles'}, status=403)
 
-        elif chat_type == Chat.GROUP:
-            if len(participants_ids) < 2:
-                return Response({"error": "Для группового чата нужно минимум 2 участника"}, status=status.HTTP_400_BAD_REQUEST)
+        target = ChatMembership.objects.filter(chat=chat, user=user).first()
+        if target:
+            target.role = role
+            target.save()
+            return Response({'status': f'User {user.username} role changed to {role}'})
+        return Response({'error': 'User not found in chat'}, status=404)
+    
+    @action(detail=True, methods=['post'])
+    def remove(self, request, pk=None):
+        """Удалить участника из чата"""
+        chat = self.get_object()
+        user_id = request.data.get('user_id')
+        target_user = get_object_or_404(User, id=user_id)
 
-            participants = User.objects.filter(id__in=participants_ids)
-            if participants.count() != len(participants_ids):
-                return Response({"error": "Некоторые пользователи не найдены"}, status=status.HTTP_400_BAD_REQUEST)
+        membership = ChatMembership.objects.filter(chat=chat, user=request.user).first()
+        if not membership or membership.role != 'admin':
+            return Response({'error': 'Only admins can remove users'}, status=403)
 
-            chat = Chat.objects.create(chat_type=Chat.GROUP, name=name)
-            chat.participants.add(request.user)
-            chat.participants.add(*participants)
-            chat.save()
-            serializer = self.get_serializer(chat)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        if request.user.id == target_user.id:
+            return Response({'error': 'You cannot remove yourself'}, status=400)
 
-        return Response({"error": "Неверный тип чата"}, status=status.HTTP_400_BAD_REQUEST)
+        ChatMembership.objects.filter(chat=chat, user=target_user).delete()
+        return Response({'status': f'{target_user.username} removed from chat'})
+    
+    def get_queryset(self):
+        # Возвращаем чаты, где пользователь — участник
+        return self.queryset.filter(participants=self.request.user)
+
+    def perform_destroy(self, instance):
+        # Дополнительно можно проверять, может ли пользователь удалить чат
+        if not instance.participants.filter(id=self.request.user.id).exists():
+            raise PermissionDenied("Вы не участник этого чата.")
+        # Можно добавить проверку роли admin
+        membership = instance.chatmembership_set.filter(user=self.request.user).first()
+        if membership and membership.role != 'admin':
+            raise PermissionDenied("Только админы могут удалять чат.")
+       
+
 
 
 class MessageViewSet(viewsets.ModelViewSet):
     queryset = Message.objects.all()
-    serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        chat_id = self.request.query_params.get('chat')
-        qs = Message.objects.filter(chat__participants=self.request.user)
-        if chat_id:
-            qs = qs.filter(chat_id=chat_id)
-        return qs
+    def get_serializer_class(self):
+        if self.action in ['create']:
+            return MessageCreateSerializer
+        return MessageSerializer
 
     def perform_create(self, serializer):
-        chat = serializer.validated_data['chat']
-        if self.request.user not in chat.participants.all():
-            raise PermissionDenied("Вы не участник этого чата")
         serializer.save(sender=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        message = self.get_object()
+        if message.sender != request.user:
+            return Response({'error': 'You can only edit your messages'}, status=403)
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        message = self.get_object()
+        if message.sender != request.user:
+            return Response({'error': 'You can only delete your messages'}, status=403)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def forward(self, request, pk=None):
+        original = self.get_object()
+        chat_id = request.data.get('chat')
+        chat = get_object_or_404(Chat, id=chat_id)
+
+        forwarded = Message.objects.create(
+            sender=request.user,
+            chat=chat,
+            content=original.content,
+            forwarded_from=original
+        )
+        serializer = MessageSerializer(forwarded)
+        return Response(serializer.data, status=201)
+
+
 
 
